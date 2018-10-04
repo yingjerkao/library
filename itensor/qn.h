@@ -1,204 +1,333 @@
 //
-// Distributed under the ITensor Library License, Version 1.0.
+// Distributed under the ITensor Library License, Version 1.2
 //    (See accompanying LICENSE file.)
 //
 #ifndef __ITENSOR_QN_H
 #define __ITENSOR_QN_H
 
+#include "itensor/global.h"
+#include "itensor/arrow.h"
+
+namespace itensor {
+
 //
 // QN
 //
-// Quantum number label for IQIndex's.
+// Quantum number label for IQIndexes.
+//
+
+class QN;
+
+//
+// QN convenience accessor functions
 // 
-// For a QN "q", 
+
+//Get the Sz value
+//Appropriate for QNs constructed via:
+//spin, spinboson, electron, elparity
+int
+Sz(QN const& q);
+
+//Get the Nb (boson number) value
+//Appropriate for QNs constructed via:
+//boson, spinboson
+int
+Nb(QN const& q);
+
+//Get the Nf (fermion number) value
+//Appropriate for QNs constructed via:
+//electron
+int
+Nf(QN const& q);
+
+//Get the fermion parity value.
+//Either 0 for even parity or 1 for odd parity.
+//Appropriate for QNs constructed via:
+//electron, elparity
+int
+Pf(QN const& q);
+//Nfp is an alias for Pf
+int
+Nfp(QN const& q);
+
+
+size_t inline constexpr
+QNSize() { return 4ul; }
+
+//QNVal: storage element type for QN
+//Represents a number with a Z (integer)
+//or Z_M (integer mod M) addition rule
 //
-// q.sz() tracks the Sz eigenvalue mz in
-// units of 1/2 (i.e. sz() == 1 is mz = 1/2,
-// sz() == -1 is mz = -1/2, sz() == 2 is mz = 1, etc.)
+// Meaning of mod field:
+// mod == 1  => Z addition
+// mod >  1  => Z_M addition
+// mod <  0  => same as above, fermionic
+// mod == 0  => inactive/not used
+struct QNVal
+    {
+    using qn_t = int;
+    private:
+    qn_t val_ = 0,
+         mod_ = 0;
+    public:
+
+    QNVal() { }
+
+    explicit QNVal(qn_t v) : val_(v), mod_(1) { }
+
+    QNVal(qn_t v, qn_t m) : mod_(m) { set(v); }
+
+    QNVal(std::initializer_list<qn_t> qv)
+        {
+        if(qv.size() != 2) Error("initializer_list arg to QNVal must have two elements");
+        mod_ = *(qv.begin()+1);
+        set(*(qv.begin()));
+        }
+
+    qn_t
+    mod() const { return mod_; }
+
+    qn_t
+    val() const { return val_; }
+
+    void
+    set(qn_t v);
+
+    QNVal
+    operator-() const { return QNVal(-val_, mod_); }
+    };
+
 //
-// q.Nf() tracks the number of particles
-//
-// q.Nfp() tracks the fermion parity, which is
-// just the particle number mod 2 (always 0 or 1).
-// This is useful e.g. for superconductors which
-// respect parity but do not conserve Nf
+// QN - quantum number label for IQIndex sectors
 //
 
 class QN
     {
     public:
-
-    QN(int sz = 0,int Nf = 0);
-
-    QN(int sz, int Nf, int Nfp);
-
-    QN(std::istream& s) { read(s); }
-
-    int 
-    sz() const { return _sz; }
-
-    int 
-    Nf() const { return _Nf; }
-
-    int 
-    Nfp() const { return _Nfp; }
-
-    int 
-    sign() const { return (_Nfp == 0 ? +1 : -1); }
-
-    void 
-    write(std::ostream& s) const;
-
-    void 
-    read(std::istream& s);
-
-    QN 
-    operator+(const QN &other) const
-        { QN res(*this); res+=other; return res; }
-
-    QN 
-    operator-(const QN &other) const
-        { QN res(*this); res-=other; return res; }
-
-    QN& 
-    operator+=(const QN &other)
-        {
-        _sz+=other._sz; 
-        _Nf+=other._Nf; 
-        _Nfp = abs(_Nfp+other._Nfp)%2;
-        return *this;
-        }
-
-    QN& 
-    operator-=(const QN &other)
-        {
-        _sz-=other._sz; 
-        _Nf-=other._Nf; 
-        _Nfp = abs(_Nfp-other._Nfp)%2;
-        return *this;
-        }
-
-    QN 
-    operator-() const  
-        { return QN(-_sz,-_Nf,_Nfp); }
-    
-    QN 
-    negated() const { return QN(-_sz,-_Nf,_Nfp); }
-
-    //Multiplication and division should only be used to change the sign
-    QN& 
-    operator*=(int i) 
-        { 
-        assert(i*i == 1); 
-        _sz*=i; 
-        _Nf*=i; 
-        return *this; 
-        }
-
-    QN 
-    operator*(int i) const { QN res(*this); res*=i; return res; }
-
-    QN 
-    operator/(int i) const { QN res(*this); res*=i; return res; }
-
-    std::string 
-    toString() const;
-
-    void 
-    print(std::string name = "") const;
-
+    using qn_t = QNVal::qn_t;
+    using storage_type = std::array<QNVal,QNSize()>;
+    using iterator = storage_type::iterator;
+    using const_iterator = storage_type::const_iterator;
     private:
+    storage_type qn_{};
+    public:
 
-    int _sz, 
-        _Nf, 
-        _Nfp; //_Nfp stands for fermion number parity, 
-              //and tracks whether Nf is even or odd
-              //(can't just calculate Nfp from Nf on the fly
-              //because we may not be tracking Nf, i.e. Nf==0)
+    QN() { }
+
+    // Takes named Args:
+    // QN({"Sz=",-1,"Nf=",2})
+    explicit
+    QN(Args const& args);
+
+    explicit
+    QN(qn_t q0);
+
+    QN(qn_t q0,
+       qn_t q1);
+
+    QN(qn_t q0,
+       qn_t q1,
+       qn_t q2);
+
+    QN(qn_t q0,
+       qn_t q1,
+       qn_t q2,
+       qn_t q3);
+
+    template <typename T, typename... Rest>
+    QN(const char* name1,
+       T const& t1, 
+       Rest const&... rest)
+      : QN(Args(name1,t1,rest...))
+        { }
+
+    // Takes QNVal arguments,
+    // specifying both a qn value in each
+    // sector and a mod factor
+    // Can call as as QN({0,2},{1,2})
+    explicit
+    QN(QNVal v0,
+       QNVal v1 = QNVal{},
+       QNVal v2 = QNVal{},
+       QNVal v3 = QNVal{}) 
+     : qn_{{v0,v1,v2,v3}} 
+       { }
+
+    explicit
+    QN(std::initializer_list<qn_t> qv)
+        {
+        qn_[0] = qv;
+        }
+
+    explicit operator bool() const { return qn_.front().mod() != 0; }
+
+    qn_t
+    operator[](size_t n) const
+        { 
+#ifdef DEBUG
+        return qn_.at(n).val(); 
+#else
+        return qn_[n].val(); 
+#endif
+        }
+
+    //1-indexed
+    qn_t
+    operator()(size_t n) const { return operator[](n-1); }
+
+    //1-indexed
+    qn_t
+    mod(size_t n) const { return qn_.at(n-1).mod(); }
+
+    size_t
+    size() const { return qn_.size(); }
+
+    //0-indexed
+    QNVal &
+    val0(size_t n)
+        { 
+#ifdef DEBUG
+        return qn_.at(n); 
+#else
+        return qn_[n]; 
+#endif
+        }
+
+    //0-indexed
+    QNVal const&
+    val0(size_t n) const 
+        { 
+#ifdef DEBUG
+        return qn_.at(n); 
+#else
+        return qn_[n]; 
+#endif
+        }
+
+    void
+    modAssign(QN const& qo);
+
+    storage_type &
+    store() { return qn_; }
+
+    storage_type const&
+    store() const { return qn_; }
     };
 
-inline QN::
-QN(int sz, int Nf)
-    :
-    _sz(sz),
-    _Nf(Nf),
-    _Nfp(abs(Nf%2))
-    { }
 
-inline QN::
-QN(int sz, int Nf, int Nfp) 
-    : 
-    _sz(sz), 
-    _Nf(Nf), 
-    _Nfp(abs(Nfp%2))
-    { 
-    assert(_Nf==0 || abs(_Nf%2) == _Nfp); 
-    }
-
-void inline QN::
-write(std::ostream& s) const 
-    { 
-    s.write((char*)&_sz,sizeof(_sz)); 
-    s.write((char*)&_Nf,sizeof(_Nf)); 
-    s.write((char*)&_Nfp,sizeof(_Nfp)); 
-    }
-
-void inline QN::
-read(std::istream& s) 
-    { 
-    s.read((char*)&_sz,sizeof(_sz)); 
-    s.read((char*)&_Nf,sizeof(_Nf)); 
-    s.read((char*)&_Nfp,sizeof(_Nfp)); 
-    }
-
-std::string inline QN::
-toString() const
-    { return (boost::format("(%+d:%d)")%_sz%_Nf).str(); }
-
-inline std::ostream& 
-operator<<(std::ostream &o, const QN &q)
-    { 
-    return o << boost::format("sz = %d, Nf = %d, fp = %s") 
-                % q.sz() % q.Nf() % (q.sign() < 0 ? "-" : "+"); 
-    }
-
-void inline QN::
-print(std::string name) const
-    { 
-    std::cout << "\n" << name << " =\n" 
-              << *this << std::endl; 
-    }
+//
+// QNVal functions
+// 
 
 bool inline
-operator==(const QN &a,const QN &b)
-    { 
-    return a.sz() == b.sz() 
-        && a.Nf() == b.Nf() 
-        && a.Nfp() == b.Nfp(); 
-    }
+isFermionic(QNVal const& qv) { return qv.mod() < 0; }
 
 bool inline
-operator!=(const QN &a,const QN &b)
-    { 
-    return a.sz() != b.sz() 
-        || a.Nf() != b.Nf() 
-        || a.Nfp() != b.Nfp(); 
-    }
+isActive(QNVal const& qv) { return qv.mod() != 0; }
+
+void
+operator+=(QNVal& qva, QNVal const& qvb);
+
+void
+operator-=(QNVal& qva, QNVal const& qvb);
+
+void
+operator*=(QNVal& qva, Arrow dir);
+
+bool
+operator==(QNVal const& qva, QNVal const& qvb);
+
+bool
+operator!=(QNVal const& qva, QNVal const& qvb);
+
+void
+read(std::istream & s, QNVal & q);
+
+void
+write(std::ostream & s, QNVal const& q);
+
+
+//
+// QN functions
+// 
+
+//1-indexed
+bool inline
+isActive(QN const& q, size_t n) { return isActive(q.val0(n-1)); }
 
 bool inline
-operator<(const QN &a,const QN &b)
-    { 
-    return a.sz() < b.sz() 
-        || (a.sz() == b.sz() && a.Nf() < b.Nf()) 
-        || (a.sz() == b.sz() && a.Nf() == b.Nf() && a.Nfp() < b.Nfp()); 
-    }
+isFermionic(QN const& q, size_t n) { return q.mod(n) < 0; }
+
+bool
+operator==(QN const& qa, QN const& qb);
+
+bool inline
+operator!=(QN const& qa, QN const& qb) { return !operator==(qa,qb); }
+
+bool
+operator<(QN const& qa, QN const& qb);
+
+QN
+operator-(QN q);
+
+void
+operator+=(QN & qa, QN const& qb);
+
+void
+operator-=(QN & qa, QN const& qb);
+
+void
+operator*=(QN & qa, Arrow dir);
 
 QN inline
-operator*(int i,const QN& a)
-    { 
-    return a*i; 
-    }
+operator+(QN qa, QN const& qb) { qa += qb; return qa; }
+
+QN inline
+operator-(QN qa, QN const& qb) { qa -= qb; return qa; }
+
+QN inline
+operator*(QN q, Arrow dir) { q *= dir; return q; }
+
+QN inline
+operator*(Arrow dir, QN q) { q *= dir; return q; }
+
+std::ostream& 
+operator<<(std::ostream & s, QN const& q);
+
+//returns -1 if any sector of the QN is fermionic and odd-parity
+//otherwise returns +1
+int
+paritySign(QN const& q);
+
+//returns true if any sector of the QN is fermionic
+bool
+isFermionic(QN const& q);
+
+void
+read(std::istream & s, QN & q);
+
+void
+write(std::ostream & s, QN const& q);
+
+void
+printFull(QN const& q);
 
 
+int inline
+Sz(QN const& q) { return q[0]; }
+
+int inline
+Nb(QN const& q) { return isActive(q,2) ? q(2) : q(1); }
+
+int inline
+Nf(QN const& q) { return isActive(q,2) ? q(2) : q(1); }
+
+int inline
+Pf(QN const& q) { return std::abs(Nf(q))%2; }
+
+int inline
+Nfp(QN const& q) { return Pf(q); }
+
+} //namespace itensor
 
 #endif

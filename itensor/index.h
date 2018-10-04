@@ -1,405 +1,320 @@
 //
-// Distributed under the ITensor Library License, Version 1.0.
+// Distributed under the ITensor Library License, Version 1.2
 //    (See accompanying LICENSE file.)
 //
 #ifndef __ITENSOR_INDEX_H
 #define __ITENSOR_INDEX_H
-#include <string>
-#include "global.h"
-#include "boost/intrusive_ptr.hpp"
-#include "boost/uuid/uuid.hpp"
-#include "boost/uuid/random_generator.hpp"
-#include "boost/uuid/string_generator.hpp"
+#include "itensor/global.h"
+#include "itensor/indextype.h"
+#include "itensor/indexname.h"
+#include "itensor/arrow.h"
+#include <thread>
 
-#define Cout std::cout
-#define Endl std::endl
-#define Format boost::format
+namespace itensor {
 
-enum IndexType { Link, Site, ReIm, Any, NewType };
+//Forward declarations
+class IndexVal;
 
-enum PrimeType { primeLink, primeSite, primeBoth, primeNone };
+namespace detail {
+    struct RandomID
+        {
+        using rng_type = std::mt19937_64;
+        using result_type = typename rng_type::result_type;
+        std::hash<std::thread::id> hasher;
+        RandomID()
+            : rng(std::clock() + hasher(std::this_thread::get_id()))
+            { }
 
-struct UniqueID;
-class IndexDat;
-struct IndexVal;
+        result_type
+        operator()() { return rng(); }
 
+        private:
+        rng_type rng;
+        };
+
+    struct SequentialID
+        {
+        using result_type = std::uint_fast32_t;
+
+        SequentialID() : id(1) { }
+
+        result_type
+        operator()()
+            { 
+            auto res = id;
+            id += 1;
+            return res; 
+            }
+
+        private:
+        result_type id = 0;
+        };
+    } //namespace detail
 
 //
 // Index
 //
 // Represents a tensor index of fixed bond dimension m.
-// The == operator can be used to determine if two Index's match
-// (are copies of the same Index instance).
-// An Index can be made temporarily distinct from other copies 
-// by increasing its primeLevel.
+//
+// Can be compared with == operator (returns true if both
+// are copies of the same Index instance).
+//
+// To make an Index distinct from other copies, increase its primeLevel.
 //
 class Index
     {
     public:
-    //
-    // Constructors
-    //
+    using IDGenerator = detail::RandomID;
+    using id_type = IDGenerator::result_type;
+    using indexval_type = IndexVal;
+    using prime_type = int;
+    using extent_type = int;
+    private:
+    id_type id_;
+    prime_type primelevel_; 
+    extent_type m_;
+    IndexType type_;
+    IndexName name_;
+    public:
 
-    // For a default constructed Index, isNull() returns true.
     Index();
 
-    // Standard Index constructor.
     // Name of Index is used for printing purposes
-    Index(const std::string& name, 
-          int m = 1, 
+    explicit
+    Index(std::string const& name, 
+          long m = 1, 
           IndexType it = Link, 
           int primelev = 0);
 
-    // Input stream constructor.
-    Index(std::istream& s) { read(s); }
+    // Returns the bond dimension
+    long 
+    m() const { return m_; }
 
-    // Copy constructor which increments the primelevel of the copy.
-    Index(PrimeType pt,
-          const Index& other, 
-          int primeinc = 1);
-
-    //
-    // Accessor Methods
-    //
-
-    // Returns the bond dimension of an Index.
+    // Returns the prime level
     int 
-    m() const;
+    primeLevel() const { return primelevel_; }
+    // Sets the prime level to a specified value.
+    Index& 
+    primeLevel(int plev);
 
-    // Returns the unique id (uuid) of this Index.
-    const boost::uuids::uuid&
-    Ind() const;
+    // Returns the IndexType
+    IndexType
+    type() const { return type_; }
 
-    // Returns the IndexType of this Index.
-    IndexType 
-    type() const;
-
-    // Returns the name of this Index.
+    // Returns the name of this Index
     std::string 
     name() const;
 
-    // Returns the name of this Index with primes removed.
-    const std::string&
-    rawname() const;
+    // Returns the name of this Index with primes removed
+    std::string
+    rawname() const { return std::string(name_.c_str()); }
 
-    // Change the name of this Index.
-    void 
-    setname(const std::string& newname);
+    id_type
+    id() const { return id_; }
 
-    // Returns a string version of this Index's bond dimension.
-    std::string 
-    showm() const;
+    // Evaluates to false if Index is default constructed.
+    explicit operator bool() const;
 
-    // Returns a unique Real number identifying this Index.
-    // Useful for rapidly checking that two Index instances match.
-    Real 
-    uniqueReal() const;
+    // (Explicitly) convertible to integer types
+    explicit operator int() const { return m(); }
+    explicit operator long() const { return m(); }
+    explicit operator size_t() const { return m(); }
 
-    // Returns true if Index was default initialized.
-    bool 
-    isNull() const;
-    // Returns true if Index was NOT default initialized.
-    bool 
-    isNotNull() const;
-
-    // Returns the number of copies of this Index.
-    int 
-    count() const;
-
-    // Returns the prime level of this Index
-    int 
-    primeLevel() const;
-    // Set the prime level to a specified value.
-    void 
-    primeLevel(int plev);
-
-    // Returns the Arrow direction of this Index.
+    // Returns the Arrow direction of this Index
     Arrow 
     dir() const { return Out; }
-
-    //
-    // Operators
-    //
-
-    // Equality (==) operator.
-    // Evaluates to true if other Index is a
-    // copy of this Index with the same
-    // primelevel.
-    bool 
-    operator==(const Index& other) const;
-
-    // Check if other Index is a copy of this, ignoring primeLevel.
-    bool 
-    noprime_equals(const Index& other) const;
-
-    // Less than (<) operator.
-    // Useful for sorting Index objects.
-    bool 
-    operator<(const Index& other) const;
-
-    // Creates an IndexVal from this Index with index i.
-    IndexVal operator()(int i) const;
-
-    // Output stream (<<) operator.
-    friend std::ostream& 
-    operator<<(std::ostream & s, const Index &t);
-
-    //
-    // Prime methods
-    //
-
-    // Switch primelevel from plevold to plevnew. 
-    // Has no effect if plevold doesn't match current primelevel.
     void 
-    mapprime(int plevold, int plevnew, PrimeType pt = primeBoth);
+    dir(Arrow ndir) const {  }
 
-    // Increment primelevel by 1 (or optionally by amount inc).
+    // Increase primelevel by 1 (or by optional amount inc)
+    Index& 
+    prime(int inc = 1);
+
+    // Increase primelevel by 1 (or optional amount inc)
+    // if type matches this Index or type==All
+    Index& 
+    prime(IndexType type, int inc = 1);
+
+    // Set primelevel to zero (optionally only if type matches)
+    Index& 
+    noprime(IndexType type = All) { prime(type,-primelevel_); return *this; }
+
+    // Switch primelevel from plevold to plevnew
+    // Has no effect if plevold doesn't match current primelevel
+    Index& 
+    mapprime(int plevold, int plevnew, IndexType type = All);
+
+    // Check if other Index is a copy of this, ignoring primeLevel
+    bool 
+    noprimeEquals(Index const& other) const;
+
+    //Return an IndexVal with specified value
+    IndexVal
+    operator()(long val) const;
+
+    //Return copy of this Index with primelevel plev
+    Index
+    operator[](int plev) const;
+
+    // Conjugate this Index.
+    // Currently has no effect; exists for forward compatibility
+    // with Arrows and interface compatibility with class IQIndex.
     void 
-    doprime(PrimeType pt = primeBoth, int inc = 1);
+    dag() { } //for forward compatibility with arrows
 
-    // Return copy of this Index, increasing primelevel.
-    Index 
-    primed(int inc = 1) const 
-        { 
-        static int depcount = 0;
-        if(++depcount < 20)
-            {
-            Cout << "WARNING: I.primed() method deprecated, use primed(I) instead." << Endl;
-            }
-        return Index(primeBoth,*this,inc); 
-        }
-
-    // Make a copy of this Index, increasing primelevel.
-    Index friend inline
-    primed(const Index& I, int inc = 1) { return Index(primeBoth,I,inc); }
-
-    // Return a copy of this Index with primelevel set to zero.
-    Index 
-    deprimed() const;
-
-    // Set primelevel to zero.
-    void 
-    noprime(PrimeType pt = primeBoth) { doprime(pt,-primelevel_); }
-
-    //
-    // Other methods
-    //
+    //define size()==m() in order to do 
+    //for(auto n : range(I)) { ... } for some Index I
+    long
+    size() const { return m(); }
 
     // Write Index to binary output stream.
     void 
     write(std::ostream& s) const;
 
     // Read Index from binary input stream.
-    void 
+    Index& 
     read(std::istream& s);
-
-    // Print Index to stdout.
-    void 
-    print(const std::string& name = "") const
-        { std::cout << "\n" << name << " =\n" << *this << std::endl; }
-
-    // Conjugate this Index.
-    // Currently has no effect; for forward compatibility
-    // with Arrows and interface compatibility with class IQIndex.
-    void 
-    conj() { } //for forward compatibility with arrows
-
-
-    static const Index& Null();
-
-    // Static Index indexing real and imaginary parts of a complex ITensor.
-    static const Index& IndReIm();
-
-    // IndReIm with primeLevel 1
-    static const Index& IndReImP();
-
-    // IndReIm with primeLevel 2
-    static const Index& IndReImPP();
-
-    enum Imaker { makeReIm, makeReImP, makeReImPP, makeNull };
 
     private:
 
-    friend class IQIndex;
-
-    explicit
-    Index(Imaker im);
-
-    /////////////
-    //
-    // Data Members
-
-    boost::intrusive_ptr<IndexDat> p;
-
-    int primelevel_; 
-
-    //
-    /////////////
+    Index::id_type 
+    generateID();
 
     }; //class Index
+
+// i1 compares equal to i2 if i2 is a copy of i1 with same primelevel
+bool 
+operator==(Index const& i1, Index const& i2);
+bool 
+operator!=(Index const& i1, Index const& i2);
+
+// Useful for sorting Index objects
+bool 
+operator<(Index const& i1, Index const& i2);
+bool 
+operator>(Index const& i1, Index const& i2);
+
 
 //
 // IndexVal
 //
-// Struct pairing an Index (of dimension m)
-// with a specific value i where 1 <= i <= m.
+// Class pairing an Index of dimension m
+// with a specific value i where 1 <= i <= m
 //
-struct IndexVal
+class IndexVal
     {
-    Index ind; 
-    int i;
+    public:
+    using index_type = Index;
+
+    Index index;
+    long val;
 
     IndexVal();
 
-    IndexVal(const Index& index, int i_);
+    IndexVal(const Index& index, long val_);
 
-    bool 
-    operator==(const IndexVal& other) const; 
+    long
+    m() const { return index.m(); }
 
-    friend IndexVal
-    primed(const IndexVal& iv, int inc = 1);
+    explicit operator bool() const { return bool(index); }
 
-    friend std::ostream& 
-    operator<<(std::ostream& s, const IndexVal& iv);
+    IndexVal& 
+    prime(int inc = 1) { index.prime(inc); return *this; }
 
-    static const IndexVal& 
-    Null()
-        {
-        static const IndexVal Null_(Index::makeNull);
-        return Null_;
-        }
+    IndexVal& 
+    prime(IndexType type, int inc = 1) { index.prime(type,inc); return *this; }
 
-    private:
+    IndexVal& 
+    noprime(IndexType type = All) { index.noprime(type); return *this; }
 
-    explicit
-    IndexVal(Index::Imaker im);
+    IndexVal& 
+    mapprime(int plevold, int plevnew, IndexType type = All) 
+        { index.mapprime(plevold,plevnew,type); return *this; }
+
+    void
+    dag() { }
 
     };
 
+bool
+operator==(IndexVal const& iv1, IndexVal const& iv2);
+bool
+operator!=(IndexVal const& iv1, IndexVal const& iv2);
 
-//
-// IndexDat
-// Storage for Index objects.
-//
-class IndexDat
-    {
-    public:
-
-    //////////////
-    //
-    // Public Data Members
-
-    IndexType _type;
-    boost::uuids::uuid ind;
-    int m_;
-    Real ur;
-    std::string sname;
-
-    //
-    //////////////
-
-    void 
-    setUniqueReal();
-
-    IndexDat(const std::string& name="", int mm = 1,IndexType it=Link);
-
-    //For use with read/write functionality of Index class
-    IndexDat(const std::string& ss, int mm, IndexType it, const boost::uuids::uuid& ind_);
+bool
+operator==(IndexVal const& iv, Index const& I);
+bool
+operator==(Index const& I, IndexVal const& iv);
 
 
-    static IndexDat* 
-    Null();
+Index inline
+dag(Index res) { res.dag(); return res; }
 
-    static IndexDat* 
-    ReImDat();
+IndexVal inline
+dag(IndexVal res) { res.dag(); return res; }
 
-    static IndexDat* 
-    ReImDatP();
+template<typename... VarArgs>
+Index
+prime(Index I, VarArgs&&... vargs) { I.prime(std::forward<VarArgs>(vargs)...); return I; }
 
-    static IndexDat* 
-    ReImDatPP();
+template<typename... VarArgs>
+Index
+noprime(Index I, VarArgs&&... vargs) { I.noprime(std::forward<VarArgs>(vargs)...); return I; }
 
-    friend void 
-    intrusive_ptr_add_ref(IndexDat* p);
+//Return a copy of I with prime level changed to plevnew if
+//old prime level was plevold. Otherwise has no effect.
+Index inline
+mapprime(Index I, int plevold, int plevnew, IndexType type = All)
+    { I.mapprime(plevold,plevnew,type); return I; }
 
-    friend void 
-    intrusive_ptr_release(IndexDat* p);
+template<typename... VarArgs>
+IndexVal
+prime(IndexVal I, VarArgs&&... vargs) { I.prime(std::forward<VarArgs>(vargs)...); return I; }
 
-    int 
-    count() const { return numref; }
+template<typename... VarArgs>
+IndexVal
+noprime(IndexVal I, VarArgs&&... vargs) { I.noprime(std::forward<VarArgs>(vargs)...); return I; }
 
-    private:
+//Return a copy of I with prime level changed to plevnew if
+//old prime level was plevold. Otherwise has no effect.
+IndexVal inline
+mapprime(IndexVal I, int plevold, int plevnew, IndexType type = All)
+    { I.mapprime(plevold,plevnew,type); return I; }
 
-    //////////////
-    //
-    // (Private) Data Members
-    
-    mutable unsigned int numref;
+//Make a new index with same properties as I,
+//but a different id number (will not compare equal)
+//and primelevel zero (or specified value)
+Index
+sim(Index const& I, int plev = 0);
 
-    const bool is_static_;
+//Returns a string version of this Index's bond dimension.
+std::string
+showm(Index const& I);
 
-    //
-    /////////////
-
-    explicit
-    IndexDat(Index::Imaker im);
-
-    static const UniqueID& 
-    nextID();
-
-    //These constructors are not implemented
-    //to disallow copying
-    IndexDat(const IndexDat&);
-    void operator=(const IndexDat&);
-
-    }; //class IndexDat
-
-
-
-struct UniqueID
-    {
-    boost::uuids::uuid id;
-
-    UniqueID() : id(boost::uuids::random_generator()()) { }
-
-    UniqueID& operator++();
-
-    operator boost::uuids::uuid() const { return id; }
-
-    friend std::ostream&
-    operator<<(std::ostream& s, const UniqueID& uid);
-    };
-
-template <class T> T 
-conj(T res) 
-    { 
-    res.conj(); 
-    return res; 
-    }
+std::string 
+nameint(std::string const& f, int n);
 
 std::ostream& 
-operator<<(std::ostream& s, const boost::uuids::uuid& id);
+operator<<(std::ostream & s, Index const& t);
 
 std::ostream& 
-operator<<(std::ostream& s, const IndexType& it);
+operator<<(std::ostream& s, IndexVal const& iv);
 
-int 
-IndexTypeToInt(IndexType it);
+void
+add(Args& args, 
+    Args::Name const& name, 
+    IndexType it);
 
-IndexType 
-IntToIndexType(int i);
+IndexType
+getIndexType(Args const& args, 
+             Args::Name const& name);
 
-std::string 
-putprimes(std::string s, int plev = 0);
+IndexType
+getIndexType(Args const& args, 
+             Args::Name const& name, 
+             IndexType default_val);
 
-std::string 
-nameindex(IndexType it, int plev = 0);
 
-std::string 
-nameint(const std::string& f, int n);
-
-#undef Cout
-#undef Format
-#undef Endl
+} //namespace itensor
 
 #endif

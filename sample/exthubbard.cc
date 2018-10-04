@@ -1,89 +1,92 @@
-#include "core.h"
-#include "model/spinhalf.h"
-#include "hams/ExtendedHubbard.h"
-using boost::format;
-using namespace std;
+#include "itensor/all.h"
+
+using namespace itensor;
 
 int main(int argc, char* argv[])
     {
     //Parse the input file
-    if(argc != 2)
-        {
-        cout << "Usage: " << argv[0] << " inputfile." << endl;
-        return 0;
-        }
-    string infilename(argv[1]);
-    InputFile infile(infilename);
-    InputGroup basic(infile,"basic");
+    if(argc != 2) { printfln("Usage: %s inputfile_exthubbard",argv[0]); return 0; }
+    auto input = InputGroup(argv[1],"input");
 
-    int N = 0;
-    basic.GetIntM("N",N); //the 'M' stands for mandatory
-    int Npart = N; //number of particles, default is N (half filling)
-    basic.GetInt("Npart",Npart);
+    auto N = input.getInt("N");
+    auto Npart = input.getInt("Npart",N); //number of particles, default is N (half filling)
 
-    int nsweeps = 0;
-    basic.GetIntM("nsweeps",nsweeps);
-    Real t1 = 0;
-    basic.GetRealM("t1",t1);
-    Real t2 = 0;
-    basic.GetRealM("t2",t2);
-    Real U = 0;
-    basic.GetRealM("U",U);
-    Real V1 = 0;
-    basic.GetRealM("V1",V1);
+    auto nsweeps = input.getInt("nsweeps");
+    auto t1 = input.getReal("t1",1);
+    auto t2 = input.getReal("t2",0);
+    auto U = input.getReal("U",0);
+    auto V1 = input.getReal("V1",0);
+    auto quiet = input.getYesNo("quiet",false);
 
-    InputGroup table(basic,"sweeps");
-    Sweeps sweeps(nsweeps,table);
-    cout << sweeps;
+    auto table = InputGroup(input,"sweeps");
+    auto sweeps = Sweeps(nsweeps,table);
+    println(sweeps);
 
     //
     // Initialize the site degrees of freedom.
     //
-    Hubbard model(N);
+    auto sites = Hubbard(N);
 
     //
-    // Create the Hamiltonian matrix product operator.
-    // Here we use the IQMPO class which is an MPO of 
-    // IQTensors, tensors whose indices are sorted
-    // with respect to quantum numbers
+    // Create the Hamiltonian using AutoMPO
     //
-    IQMPO H = ExtendedHubbard(model,U,t1,t2,V1);
+    auto ampo = AutoMPO(sites);
+    for(int i = 1; i <= N; ++i) 
+        {
+        ampo += U,"Nupdn",i;
+        }
+    for(int b = 1; b < N; ++b)
+        {
+        ampo += -t1,"Cdagup",b,"Cup",b+1;
+        ampo += -t1,"Cdagup",b+1,"Cup",b;
+        ampo += -t1,"Cdagdn",b,"Cdn",b+1;
+        ampo += -t1,"Cdagdn",b+1,"Cdn",b;
+        ampo += V1,"Ntot",b,"Ntot",b+1;
+        }
+    for(int b = 1; b < N-1; ++b)
+        {
+        ampo += -t2,"Cdagup",b,"Cup",b+2;
+        ampo += -t2,"Cdagup",b+2,"Cup",b;
+        ampo += -t2,"Cdagdn",b,"Cdn",b+2;
+        ampo += -t2,"Cdagdn",b+2,"Cdn",b;
+        }
+    auto H = IQMPO(ampo);
 
     //
     // Set the initial wavefunction matrix product state
     // to be a Neel state.
     //
-    InitState initState(N);
+    auto state = InitState(sites);
     int p = Npart;
     for(int i = N; i >= 1; --i) 
         {
         if(p > i)
             {
-            cout << "Doubly occupying site " << i << endl;
-            initState(i) = model.UpDn(i);
+            println("Doubly occupying site ",i);
+            state.set(i,"UpDn");
             p -= 2;
             }
         else
         if(p > 0)
             {
-            cout << "Singly occupying site " << i << endl;
-            initState(i) = (i%2==1 ? model.Up(i) : model.Dn(i));
+            println("Singly occupying site ",i);
+            state.set(i,(i%2==1 ? "Up" : "Dn"));
             p -= 1;
             }
         else
             {
-            initState(i) = model.Emp(i);
+            state.set(i,"Emp");
             }
         }
 
-    IQMPS psi(model,initState);
+    auto psi = IQMPS(state);
 
-    cout << totalQN(psi) << endl;
+    Print(totalQN(psi));
 
     //
     // Begin the DMRG calculation
     //
-    Real En = dmrg(psi,H,sweeps,Quiet());
+    auto energy = dmrg(psi,H,sweeps,{"Quiet",quiet});
 
     //
     // Measure spin densities
@@ -92,29 +95,29 @@ int main(int argc, char* argv[])
     for(int j = 1; j <= N; ++j)
         {
         psi.position(j);
-        upd(j) = Dot(conj(primesite(psi.AA(j))),model.Nup(j)*psi.AA(j));
-        dnd(j) = Dot(conj(primesite(psi.AA(j))),model.Ndn(j)*psi.AA(j));
+        upd(j-1) = (dag(prime(psi.A(j),Site))*sites.op("Nup",j)*psi.A(j)).real();
+        dnd(j-1) = (dag(prime(psi.A(j),Site))*sites.op("Ndn",j)*psi.A(j)).real();
         }
 
-    cout << "Up Density:" << endl;
-    for(int j = 1; j <= N; ++j)
-        cout << format("%d %.10f\n") % j % upd(j);
-    cout << endl;
+    println("Up Density:");
+    for(int j = 0; j < N; ++j)
+        printfln("%d %.10f",1+j,upd(j));
+    println();
 
-    cout << "Dn Density:" << endl;
-    for(int j = 1; j <= N; ++j)
-        cout << format("%d %.10f\n") % j % dnd(j);
-    cout << endl;
+    println("Dn Density:");
+    for(int j = 0; j < N; ++j)
+        printfln("%d %.10f",1+j,dnd(j));
+    println();
 
-    cout << "Total Density:" << endl;
-    for(int j = 1; j <= N; ++j)
-        cout << format("%d %.10f\n") % j % (upd(j)+dnd(j));
-    cout << endl;
+    println("Total Density:");
+    for(int j = 0; j < N; ++j)
+        printfln("%d %.10f",1+j,(upd(j)+dnd(j)));
+    println();
 
     //
     // Print the final energy reported by DMRG
     //
-    cout << format("\nGround State Energy = %.10f\n")%En;
+    printfln("\nGround State Energy = %.10f",energy);
 
     return 0;
     }

@@ -1,40 +1,16 @@
-#ifndef __TEST_H
-#define __TEST_H
+#ifndef __ITENSOR_UNITTEST_TEST_H
+#define __ITENSOR_UNITTEST_TEST_H
 
-#define CHECK_CLOSE BOOST_CHECK_CLOSE 
-#define CHECK_EQUAL BOOST_CHECK_EQUAL 
-#define CHECK       BOOST_CHECK
+#include "catch.hpp"
 
-#define TEST   BOOST_AUTO_TEST_CASE
+#define CHECK_EQUAL(X,Y) CHECK((X) == (Y))
+#define CHECK_CLOSE(X,Y) CHECK(std::norm((X)-(Y)) < 1E-10)
+//#define CHECK_CLOSE(X,Y)\
+//    if(std::norm(X) < std::norm(Y)) CHECK(std::norm((X)-(Y)) < 1E-10*std::norm(Y));\
+//    else CHECK(std::norm((X)-(Y)) < 1E-10*std::norm(X))
 
-inline double 
-Func(double x)
-    {
-    return x*x;
-    }
-
-inline int 
-Func(int x)
-    {
-    return x*x;
-    }
-
-class Functor
-    {
-    public:
-
-    double
-    operator()(double x) const
-        {
-        return x*x;
-        }
-
-    int
-    operator()(int x) const
-        {
-        return x*x;
-        }
-
-    };
+#define CHECK_REQUAL(X,Y) CHECK_CLOSE(X,Y)
+#define CHECK_DIFF(X,Y,T) CHECK(std::norm((X)-(Y)) < T)
+#define DISABLE if(false)
 
 #endif

@@ -3,45 +3,43 @@
 #
 ####################################
 
-.NOTPARALLEL:
-
 include options.mk
 
-build: utilities matrix itensor 
-
-utilities: configure
-	@echo
-	@echo Building Utilities library
-	@echo
-	cd utilities && make
-
-matrix: configure
-	@echo
-	@echo Building MatrixRef library
-	@echo
-	cd matrix && make
+build: itensor 
 
 itensor: configure
 	@echo
 	@echo Building ITensor library
 	@echo
-	cd itensor && make
+	@cd itensor && $(MAKE)
+    
 
-configure: this_dir.mk
-
-this_dir.mk:
+configure:
 	@echo
 	@echo Configure: Writing current dir to this_dir.mk
-	@echo THIS_DIR=`pwd` > this_dir.mk
+	@echo "THIS_DIR=${CURDIR}" > this_dir.mk
+	@echo "#ifndef __ITENSOR_CONFIG_H" > itensor/config.h
+	@echo "#define __ITENSOR_CONFIG_H" >> itensor/config.h
+	@echo "" >> itensor/config.h
+	@echo "#ifndef PLATFORM_$(PLATFORM)" >> itensor/config.h
+	@echo "#define PLATFORM_$(PLATFORM)" >> itensor/config.h
+	@echo "#endif" >> itensor/config.h
+	@echo "" >> itensor/config.h
+	@echo "#ifndef __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES" >> itensor/config.h
+	@echo "#define __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES 0" >> itensor/config.h
+	@echo "#endif" >> itensor/config.h
+	@echo "" >> itensor/config.h
+	@echo "#endif " >> itensor/config.h
 
 clean:
-	cd utilities && make clean
-	cd matrix && make clean
-	cd itensor && make clean
-	cd sample && make clean
-	cd sandbox && make clean
-	rm -fr include/*
-	rm -f lib/*
+	@echo "Removing temporary build files"
+	@touch this_dir.mk
+	@cd itensor && $(MAKE) clean
+	@cd sample && $(MAKE) clean
+	@cd unittest && $(MAKE) clean
+	@rm -f lib/*
+	@rm -f this_dir.mk
+	@rm -f itensor/config.h
 
 distclean: clean
-	rm -f this_dir.mk options.mk
+	@rm -f this_dir.mk options.mk

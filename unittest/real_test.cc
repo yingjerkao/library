@@ -1,105 +1,107 @@
 #include "test.h"
-#include "real.h"
-#include <boost/test/unit_test.hpp>
 
-BOOST_AUTO_TEST_SUITE(LogNumberTest)
+#include "itensor/global.h"
+#include "itensor/real.h"
 
-TEST(Constructors)
-{
-    LogNumber l1;
+using namespace itensor;
 
-    CHECK_EQUAL(l1.logNum(),0);
+TEST_CASE("Constructors")
+    {
+    LogNum l1;
+
+    REQUIRE( std::isnan(l1.logNum()) );
     CHECK_EQUAL(l1.sign(),1);
-    CHECK_EQUAL(l1.real(),1);
+    REQUIRE( std::isnan(l1.real()) );
 
-    LogNumber l2(1);
+    LogNum l2(1);
 
-    CHECK_CLOSE(l2.logNum(),0,LogNumber_Accuracy);
+    CHECK_DIFF(l2.logNum(),0,LogNum_Accuracy);
     CHECK_EQUAL(l2.sign(),1);
-    CHECK_CLOSE(l2.real(),1,LogNumber_Accuracy);
+    CHECK_DIFF(l2.real(),1,LogNum_Accuracy);
 
-    LogNumber l3(-1);
+    LogNum l3(-1);
 
-    CHECK_CLOSE(l3.logNum(),0,LogNumber_Accuracy);
+    CHECK_DIFF(l3.logNum(),0,LogNum_Accuracy);
     CHECK_EQUAL(l3.sign(),-1);
-    CHECK_CLOSE(l3.real(),-1,LogNumber_Accuracy);
+    CHECK_DIFF(l3.real(),-1,LogNum_Accuracy);
 
-    LogNumber l4(0);
+    LogNum l4(0);
 
-    CHECK_CLOSE(l4.logNum(),0,LogNumber_Accuracy);
+    CHECK_DIFF(l4.logNum(),0,LogNum_Accuracy);
     CHECK_EQUAL(l4.sign(),0);
-    CHECK_CLOSE(l4.real(),0,LogNumber_Accuracy);
-    CHECK(l4.isRealZero());
+    CHECK_DIFF(l4.real(),0,LogNum_Accuracy);
+    REQUIRE(l4.isRealZero());
 
     const Real Big= 1E50;
     const int BigExp = 50;
 
-    LogNumber l5(Big);
+    LogNum l5(Big);
 
-    CHECK_CLOSE(l5.logNum(),BigExp*log(10),LogNumber_Accuracy);
+    CHECK_DIFF(l5.logNum(),BigExp*log(10),LogNum_Accuracy);
     CHECK_EQUAL(l5.sign(),1);
-    CHECK_CLOSE(l5.real(),Big,LogNumber_Accuracy);
+    //CHECK_DIFF(l5.real(),Big,LogNum_Accuracy);
 
-    LogNumber l6(-Big);
+    LogNum l6(-Big);
 
-    CHECK_CLOSE(l6.logNum(),BigExp*log(10),LogNumber_Accuracy);
+    CHECK_DIFF(l6.logNum(),BigExp*log(10),LogNum_Accuracy);
     CHECK_EQUAL(l6.sign(),-1);
-    CHECK_CLOSE(l6.real(),-Big,LogNumber_Accuracy);
+    //CHECK_DIFF(l6.real(),-Big,LogNum_Accuracy);
 
-    Real r = ran1();
-    LogNumber l7(r);
+    Real r = Global::random();
+    LogNum l7(r);
 
-    CHECK_CLOSE(l7.logNum(),log(fabs(r)),LogNumber_Accuracy);
+    CHECK_DIFF(l7.logNum(),log(fabs(r)),LogNum_Accuracy);
     CHECK_EQUAL(l7.sign(),(r > 0 ? 1 : -1));
-    CHECK_CLOSE(l7.real(),r,LogNumber_Accuracy);
-}
+    //CHECK_DIFF(l7.real(),r,LogNum_Accuracy);
+    }
 
-TEST(Operators)
-{
-    Real a = ran1(), b = ran1();
+TEST_CASE("Operators")
+    {
+    Real a = Global::random(), b = Global::random();
 
-    const LogNumber la(a), lb(b);
+    const LogNum la(a), lb(b);
 
-    CHECK_CLOSE((la*lb).real(),a*b,LogNumber_Accuracy);
-    CHECK_CLOSE((la/lb).real(),a/b,LogNumber_Accuracy);
-    CHECK_CLOSE((lb/la).real(),b/a,LogNumber_Accuracy);
+    CHECK_DIFF((la*lb).real(),a*b,LogNum_Accuracy);
+    CHECK_DIFF((la/lb).real(),a/b,LogNum_Accuracy);
+    CHECK_DIFF((lb/la).real(),b/a,LogNum_Accuracy);
 
-    LogNumber l1(a);
+    LogNum l1(a);
     l1 *= -1;
 
-    CHECK_CLOSE((l1*-1).real(),a,LogNumber_Accuracy);
+    CHECK_DIFF((-l1).real(),a,LogNum_Accuracy);
 
-    LogNumber l2(a);
+    LogNum l2(a);
     l2 *= b;
 
-    CHECK_CLOSE(l2.real(),a*b,LogNumber_Accuracy);
+    CHECK_DIFF(l2.real(),a*b,LogNum_Accuracy);
 
-    LogNumber l3(a), l4(b);
+    LogNum l3(a), l4(b);
     l3 *= l4;
 
-    CHECK_CLOSE(l3.real(),a*b,LogNumber_Accuracy);
+    CHECK_DIFF(l3.real(),a*b,LogNum_Accuracy);
 
-    LogNumber l5(a),l6(b);
+    LogNum l5(a),l6(b);
     l5 *= -l6;
 
-    CHECK_CLOSE(l5.real(),-a*b,LogNumber_Accuracy);
+    CHECK_DIFF(l5.real(),-a*b,LogNum_Accuracy);
 
-    LogNumber l7(a);
+    LogNum l7(a);
     l7 /= b;
 
-    CHECK_CLOSE(l7.real(),a/b,LogNumber_Accuracy);
+    CHECK_DIFF(l7.real(),a/b,LogNum_Accuracy);
 
-    LogNumber l8(a),l9(b);
+    LogNum l8(a),l9(b);
     l8 /= l9;
 
-    CHECK_CLOSE(l8.real(),a/b,LogNumber_Accuracy);
-}
+    CHECK_DIFF(l8.real(),a/b,LogNum_Accuracy);
+    }
 
-TEST(Comparison)
-{
-    Real a = ran1(), b = ran1();
+TEST_CASE("Comparison")
+    {
+    Real a = Global::random(), 
+         b = Global::random();
 
-    const LogNumber la(a),lb(b);
+    const LogNum la(a),lb(b);
 
     CHECK_EQUAL(la <  lb,a <  b);
     CHECK_EQUAL(la >  lb,a >  b);
@@ -107,42 +109,31 @@ TEST(Comparison)
     CHECK_EQUAL(la >= lb,a >= b);
     CHECK_EQUAL(la == lb,a == b);
 
-    const LogNumber dla(a+0.1*LogNumber_Accuracy);
-    CHECK(la.approxEquals(dla));
-    CHECK(la != dla);
+    const LogNum dla(a+a*0.1*LogNum_Accuracy);
+    REQUIRE(la.approxEquals(dla));
+    REQUIRE(la != dla);
 
-    const LogNumber mdla(a-0.1*LogNumber_Accuracy);
-    CHECK(la.approxEquals(mdla));
-    CHECK(la != mdla);
+    const LogNum mdla(a-a*0.1*LogNum_Accuracy);
+    REQUIRE(la.approxEquals(mdla));
+    REQUIRE(la != mdla);
 
-    CHECK(la.magnitudeLessThan(lb) || lb.magnitudeLessThan(la));
+    REQUIRE((la.magnitudeLessThan(lb) || lb.magnitudeLessThan(la)));
 
-    const LogNumber p(1E-10),q(1E-12),r(-1E-12);
-    CHECK(q.magnitudeLessThan(p));
-    CHECK(r.magnitudeLessThan(p));
-    CHECK(!p.magnitudeLessThan(p));
+    const LogNum p(1E-10),q(1E-12),r(-1E-12);
+    REQUIRE(q.magnitudeLessThan(p));
+    REQUIRE(r.magnitudeLessThan(p));
+    REQUIRE(!p.magnitudeLessThan(p));
 
-    LogNumber zero(0);
+    LogNum zero(0);
 
-    CHECK(zero.approxEquals(0));
+    REQUIRE(zero.approxEquals(zero));
 
     zero *= -1;
 
-    CHECK(zero.approxEquals(0));
-}
+    REQUIRE(zero.approxEquals(zero));
 
-TEST(ReadWrite)
-{
-    Real a = ran1();
-    LogNumber la(a); 
+    LogNum one(1);
 
-    writeToFile(".read_write/LogNumber",la);
-
-    LogNumber laR;
-    readFromFile(".read_write/LogNumber",laR);
-
-    CHECK(laR == la);
-}
-
-BOOST_AUTO_TEST_SUITE_END()
+    REQUIRE(zero < one);
+    }
 
